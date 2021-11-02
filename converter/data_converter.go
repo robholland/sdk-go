@@ -52,4 +52,8 @@ type (
 		// ToStrings converts payloads object into human readable strings.
 		ToStrings(input *commonpb.Payloads) []string
 	}
+
+	DataConverterContext interface {
+		Value(key interface{}) interface{}
+	}
 )

@@ -66,8 +66,8 @@ type (
 	// This interface allows Temporal to pass Workflow/Activity contexts to the DataConverter
 	// so that it may tailor it's behaviour.
 	ContextAware interface {
-		WithWorkflowContext(ctx Context) converter.DataConverter
-		WithContext(ctx context.Context) converter.DataConverter
+		WithWorkflowContext(ctx converter.DataConverterContext) converter.DataConverter
+		WithContext(ctx converter.DataConverterContext) converter.DataConverter
 	}
 
 	headerReader struct {
@@ -122,7 +122,7 @@ func NewHeaderWriter(header *commonpb.Header) HeaderWriter {
 // WithWorkflowContext returns a new DataConverter tailored to the passed Workflow context if
 // the DataConverter implements the ContextAware interface. Otherwise the DataConverter is returned
 // as-is.
-func WithWorkflowContext(ctx Context, dc converter.DataConverter) converter.DataConverter {
+func WithWorkflowContext(ctx converter.DataConverterContext, dc converter.DataConverter) converter.DataConverter {
 	if d, ok := dc.(ContextAware); ok {
 		return d.WithWorkflowContext(ctx)
 	}
@@ -133,7 +133,7 @@ func WithWorkflowContext(ctx Context, dc converter.DataConverter) converter.Data
 // the DataConverter implements the ContextAware interface. Otherwise the DataConverter is returned
 // as-is. This is generally used for Activity context but can be context for a Workflow if we're
 // not yet executing the workflow so do not have a workflow.Context.
-func WithContext(ctx context.Context, dc converter.DataConverter) converter.DataConverter {
+func WithContext(ctx converter.DataConverterContext, dc converter.DataConverter) converter.DataConverter {
 	if d, ok := dc.(ContextAware); ok {
 		return d.WithContext(ctx)
 	}

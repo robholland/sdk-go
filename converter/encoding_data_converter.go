@@ -51,6 +51,10 @@ type PayloadEncoder interface {
 	Decode(*commonpb.Payload) error
 }
 
+type PayloadEncoderWithContext interface {
+	WithContext(ctx DataConverterContext) PayloadEncoder
+}
+
 // ZlibEncoderOptions are options for NewZlibEncoder. All fields are optional.
 type ZlibEncoderOptions struct {
 	// If true, the zlib encoder will encode the contents even if there is no size
@@ -129,6 +133,34 @@ var _ DataConverter = &EncodingDataConverter{}
 // ToString(s), the encoders are applied first to last to reverse the effect.
 func NewEncodingDataConverter(parent DataConverter, encoders ...PayloadEncoder) *EncodingDataConverter {
 	return &EncodingDataConverter{parent, encoders}
+}
+
+func (e *EncodingDataConverter) WithContext(ctx DataConverterContext) *EncodingDataConverter {
+	encoders := make([]PayloadEncoder, len(e.encoders))
+
+	for i, e := range e.encoders {
+		if ewc, ok := e.(PayloadEncoderWithContext); ok {
+			encoders[i] = ewc.WithContext(ctx)
+		} else {
+			encoders[i] = e
+		}
+	}
+
+	return &EncodingDataConverter{e.parent, encoders}
+}
+
+func (e *EncodingDataConverter) WithWorkflowContext(ctx DataConverterContext) *EncodingDataConverter {
+	encoders := make([]PayloadEncoder, len(e.encoders))
+
+	for i, e := range e.encoders {
+		if ewc, ok := e.(PayloadEncoderWithContext); ok {
+			encoders[i] = ewc.WithContext(ctx)
+		} else {
+			encoders[i] = e
+		}
+	}
+
+	return &EncodingDataConverter{e.parent, encoders}
 }
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
