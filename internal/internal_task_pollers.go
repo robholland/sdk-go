@@ -769,6 +769,7 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 	wtp.requestLock.Lock()
 	wtp.stickyBacklog = backlogCountHint
 	wtp.requestLock.Unlock()
+	wtp.metricsHandler.WithTags(metrics.PollerTags(metrics.PollerTypeWorkflowStickyTask)).Gauge(metrics.TaskQueueBacklogGauge).Update(float64(backlogCountHint))
 }
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration.
