@@ -351,12 +351,15 @@ func (bw *baseWorker) runPoller() {
 	ctx, cancelfn := context.WithCancel(context.Background())
 	defer cancelfn()
 	reserveChan := make(chan *SlotPermit)
+	lastPollTime := time.Now()
 
 	for {
 		bw.stopWG.Add(1)
 		go func() {
 			defer bw.stopWG.Done()
+			start := time.Now()
 			s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)
+			bw.metricsHandler.Timer(metrics.PollerSlotWaitLatency).Record(time.Since(start))
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					bw.logger.Error(fmt.Sprintf("Error while trying to reserve slot: %v", err))
@@ -379,6 +382,9 @@ func (bw *baseWorker) runPoller() {
 		case <-bw.stopCh:
 			return
 		case permit := <-reserveChan:
+			now := time.Now()
+			bw.metricsHandler.Timer(metrics.PollerGapLatency).Record(now.Sub(lastPollTime))
+			lastPollTime = now
 			if permit == nil { // There was an error reserving a slot
 				// Avoid spamming reserve hard in the event it's constantly failing
 				if ctx.Err() == nil {
@@ -402,6 +408,12 @@ func (bw *baseWorker) tryReserveSlot() *SlotPermit {
 }
 
 func (bw *baseWorker) releaseSlot(permit *SlotPermit, reason SlotReleaseReason) {
+	switch reason {
+	case SlotReleaseReasonUnused:
+		bw.metricsHandler.Counter(metrics.SlotReleaseUnusedCounter).Inc(1)
+	case SlotReleaseReasonTaskProcessed:
+		bw.metricsHandler.Counter(metrics.SlotReleaseProcessedCounter).Inc(1)
+	}
 	bw.slotSupplier.ReleaseSlot(permit, reason)
 }
 
@@ -496,28 +508,42 @@ func (bw *baseWorker) pollTask(slotPermit *SlotPermit) {
 	}()
 
 	bw.retrier.Throttle(bw.stopCh)
-	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
-		task, err = bw.options.taskWorker.PollTask()
-		bw.logPollTaskError(err)
-		if err != nil {
-			// We retry "non retriable" errors while long polling for a while, because some proxies return
-			// unexpected values causing unnecessary downtime.
-			if isNonRetriableError(err) && bw.retrier.GetElapsedTime() > getRetryLongPollGracePeriod() {
-				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
-				if bw.fatalErrCb != nil {
-					bw.fatalErrCb(err)
-				}
-				return
-			}
-			// We use the secondary retrier on resource exhausted
-			_, resourceExhausted := err.(*serviceerror.ResourceExhausted)
-			bw.retrier.Failed(resourceExhausted)
-		} else {
-			bw.retrier.Succeeded()
+	var startRPC time.Time
+	if bw.pollLimiter != nil {
+		startLimiter := time.Now()
+		if bw.pollLimiter.Wait(bw.limiterContext) != nil {
+			bw.metricsHandler.Timer(metrics.PollerLimiterDelayLatency).Record(time.Since(startLimiter))
+			return
 		}
+		bw.metricsHandler.Timer(metrics.PollerLimiterDelayLatency).Record(time.Since(startLimiter))
+	}
+
+	startRPC = time.Now()
+	task, err = bw.options.taskWorker.PollTask()
+	bw.metricsHandler.Timer(metrics.PollerRPCLatency).Record(time.Since(startRPC))
+	bw.logPollTaskError(err)
+	if err != nil {
+		if isNonRetriableError(err) && bw.retrier.GetElapsedTime() > getRetryLongPollGracePeriod() {
+			bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
+			if bw.fatalErrCb != nil {
+				bw.fatalErrCb(err)
+			}
+			return
+		}
+		_, resourceExhausted := err.(*serviceerror.ResourceExhausted)
+		bw.retrier.Failed(resourceExhausted)
+	} else {
+		bw.retrier.Succeeded()
 	}
 
 	if task != nil {
+		if poll, ok := task.(interface{ isEmpty() bool }); ok {
+			if poll.isEmpty() {
+				bw.metricsHandler.Timer(metrics.PollerIdleLatency).Record(time.Since(startRPC))
+			} else {
+				bw.metricsHandler.Timer(metrics.PollerActiveLatency).Record(time.Since(startRPC))
+			}
+		}
 		select {
 		case bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}:
 			didSendTask = true

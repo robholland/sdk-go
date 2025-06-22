@@ -43,6 +43,16 @@ const (
 	PollerStartCounter       = TemporalMetricsPrefix + "poller_start"
 	NumPoller                = TemporalMetricsPrefix + "num_pollers"
 
+	PollerSlotWaitLatency       = TemporalMetricsPrefix + "poller_slot_wait_latency"
+	PollerLimiterDelayLatency   = TemporalMetricsPrefix + "poller_limiter_delay_latency"
+	PollerRPCLatency            = TemporalMetricsPrefix + "poller_rpc_latency"
+	PollerIdleLatency           = TemporalMetricsPrefix + "poller_idle_latency"
+	PollerActiveLatency         = TemporalMetricsPrefix + "poller_active_latency"
+	PollerGapLatency            = TemporalMetricsPrefix + "poller_gap_latency"
+	SlotReleaseUnusedCounter    = TemporalMetricsPrefix + "slot_release_unused"
+	SlotReleaseProcessedCounter = TemporalMetricsPrefix + "slot_release_processed"
+	TaskQueueBacklogGauge       = TemporalMetricsPrefix + "task_queue_backlog"
+
 	TemporalRequest                      = TemporalMetricsPrefix + "request"
 	TemporalRequestFailure               = TemporalRequest + "_failure"
 	TemporalRequestLatency               = TemporalRequest + "_latency"
